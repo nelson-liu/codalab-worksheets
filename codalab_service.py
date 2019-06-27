@@ -87,6 +87,7 @@ class CodalabArgs(argparse.Namespace):
         # SUBCOMMANDS
 
         start_cmd = subparsers.add_parser('start', help='Start a CodaLab service instance')
+        pull_cmd = subparsers.add_parser('pull', help='Re-pull the images for the given version')
         logs_cmd = subparsers.add_parser('logs', help='View logs for existing CodaLab instance')
         test_cmd = subparsers.add_parser(
             'test', help='Run tests against an existing CodaLab instance'
@@ -108,6 +109,7 @@ class CodalabArgs(argparse.Namespace):
         #  CLIENT SETTINGS
         for cmd in [
             start_cmd,
+            pull_cmd,
             logs_cmd,
             test_cmd,
             build_cmd,
@@ -171,7 +173,7 @@ class CodalabArgs(argparse.Namespace):
 
         #  BUILD SETTINGS
 
-        for cmd in [build_cmd, start_cmd, run_cmd]:
+        for cmd in [build_cmd, start_cmd, run_cmd, pull_cmd]:
             cmd.add_argument(
                 '--version',
                 '-v',
@@ -533,6 +535,8 @@ class CodalabServiceManager(object):
     def execute(self):
         if self.command == 'build' or (self.command == 'start' and self.args.build_locally):
             self.build()
+        if self.command == 'pull':
+            self.pull_images()
         if self.command == 'start':
             self.start_service()
             if self.args.test_build:
@@ -560,6 +564,13 @@ class CodalabServiceManager(object):
         self._run_docker_cmd(
             'build -t codalab/%s:%s -f docker/dockerfiles/Dockerfile.%s .'
             % (image, self.args.version, image)
+        )
+
+    def pull_image(self, image):
+        print("[CODALAB] ==> Pulling %s image " % image)
+        self._run_docker_cmd(
+            'pull codalab/%s:%s'
+            % (image, self.args.version)
         )
 
     def push_image(self, image):
@@ -647,6 +658,22 @@ class CodalabServiceManager(object):
         if self.args.start_worker:
             print("[CODALAB] ==> Starting worker")
             self.bring_up_service('worker')
+
+    def pull_images(self):
+        print("[CODALAB] => Pulling Docker images")
+        if self.args.image == 'all':
+            images_to_pull = self.ALL_IMAGES
+        elif self.args.image == 'service':
+            images_to_pull = self.SERVICE_IMAGES
+        else:
+            images_to_pull = [self.args.image]
+        for image in images_to_pull:
+            if self.args.dev:
+                if image == 'frontend':
+                    image = 'frontend-dev'
+                elif image == 'server':
+                    image = 'server-dev'
+            self.pull_image(image)
 
     def build(self):
         print("[CODALAB] => Building Docker images")
