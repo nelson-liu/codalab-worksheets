@@ -3342,15 +3342,6 @@ class BundleCLI(object):
             args.dest_worksheet_spec
         )
 
-        # Save all items to the destination worksheet
-        for item in source_items:
-            item['worksheet'] = JsonApiRelationship('worksheets', dest_worksheet_uuid)
-        dest_client.create(
-            'worksheet-items',
-            source_items,
-            params={'replace': args.replace, 'uuid': dest_worksheet_uuid},
-        )
-
         # Copy over the bundles
         for item in source_items:
             if item['type'] == worksheet_util.TYPE_BUNDLE:
@@ -3360,7 +3351,7 @@ class BundleCLI(object):
                     dest_client,
                     dest_worksheet_uuid,
                     copy_dependencies=False,
-                    add_to_worksheet=False,
+                    add_to_worksheet=True,
                 )
 
         print(
