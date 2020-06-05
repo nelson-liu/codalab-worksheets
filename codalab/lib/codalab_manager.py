@@ -130,7 +130,7 @@ class CodaLabManager(object):
 
         if self.temporary:
             self.config = config if config else {}
-            if self.config.get("state_backend") == "sqlite3":
+            if self.state_backend == "sqlite3":
                 self.connection = sqlite3.connect(":memory:")
                 self.connection.row_factory = sqlite3.Row
                 with self.connection:
@@ -166,7 +166,7 @@ class CodaLabManager(object):
 
         self.config = replace(self.config)
 
-        if self.config.get("state_backend") == "sqlite3":
+        if self.state_backend == "sqlite3":
             # Read state database, creating if it doesn't exist.
             self.connection = sqlite3.connect(self.state_path)
             self.connection.row_factory = sqlite3.Row
@@ -251,7 +251,7 @@ class CodaLabManager(object):
     @property
     @cached
     def state_path(self):
-        if self.config.get("state_backend") == "sqlite3":
+        if self.state_backend == "sqlite3":
             return os.getenv('CODALAB_STATE', os.path.join(self.codalab_home, 'state.db'))
         return os.getenv('CODALAB_STATE', os.path.join(self.codalab_home, 'state.json'))
 
@@ -339,7 +339,7 @@ class CodaLabManager(object):
         """
         Return the current session.
         """
-        if self.config.get("state_backend") == "sqlite3":
+        if self.state_backend == "sqlite3":
             return self._session_sqlite3()
         sessions = self.state['sessions']
         name = self.session_name()
@@ -496,6 +496,10 @@ class CodaLabManager(object):
     def cli_verbose(self):
         return self.config.get('cli', {}).get('verbose')
 
+    @property
+    def state_backend(self):
+        return self.config.get('state_backend')
+
     def _authenticate(self, cache_key, auth_handler):
         """
         Authenticate with the given client. This will prompt user for password
@@ -507,7 +511,7 @@ class CodaLabManager(object):
         :param auth_handler: AuthHandler through which to authenticate
         :return: access token
         """
-        if self.config.get("state_backend") == "sqlite3":
+        if self.state_backend == "sqlite3":
             return self._authenticate_sqlite3(cache_key, auth_handler)
         auth = self.state['auth'].get(cache_key, {})
 
@@ -667,7 +671,7 @@ class CodaLabManager(object):
         else:
             if 'worksheet_uuid' in session:
                 del session['worksheet_uuid']
-        if self.config.get("state_backend") == "sqlite3":
+        if self.state_backend == "sqlite3":
             with self.connection:
                 c = self.connection.cursor()
                 c.execute(
@@ -678,7 +682,7 @@ class CodaLabManager(object):
             self.save_state()
 
     def check_version(self, server_version):
-        if self.config.get("state_backend") == "sqlite3":
+        if self.state_backend == "sqlite3":
             return self._check_version_sqlite3(server_version)
         # Enforce checking version at most once every 24 hours
         epoch_str = formatting.datetime_str(datetime.datetime.utcfromtimestamp(0))
@@ -737,7 +741,7 @@ class CodaLabManager(object):
 
     def logout(self, address):
         """Clear credentials associated with given address."""
-        if self.config.get("state_backend") == "sqlite3":
+        if self.state_backend == "sqlite3":
             return self._logout_sqlite3(address)
         if address in self.state['auth']:
             del self.state['auth'][address]
@@ -762,5 +766,5 @@ class CodaLabManager(object):
         """
         Clean up the CodalabManager by closing the SQLite connection, if applicable.
         """
-        if self.config.get("state_backend") == "sqlite3" and getattr(self, "connection", None):
+        if self.state_backend == "sqlite3" and getattr(self, "connection", None):
             self.connection.close()
