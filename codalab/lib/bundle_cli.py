@@ -943,7 +943,14 @@ class BundleCLI(object):
             print("client_version: %s" % CODALAB_VERSION, file=self.stdout)
             print("server_version: %s" % worksheet_info['meta']['version'], file=self.stdout)
             print("address: %s" % address, file=self.stdout)
-            state = self.manager.state['auth'].get(address, {})
+            if self.manager.config.get("state_backend") == "sqlite3":
+                with self.manager.connection:
+                    c = self.manager.connection.cursor()
+                    c.execute("SELECT * FROM auth WHERE server=?", (address, ))
+                    retrieved_auth_state = c.fetchone()
+                state = dict(retrieved_auth_state) if retrieved_auth_state else {}
+            else:
+                state = self.manager.state['auth'].get(address, {})
             if 'username' in state:
                 print("username: %s" % state['username'], file=self.stdout)
 
