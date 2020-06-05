@@ -135,9 +135,13 @@ class CodaLabManager(object):
                 self.connection.row_factory = sqlite3.Row
                 with self.connection:
                     c = self.connection.cursor()
-                    c.execute('CREATE TABLE if not exists auth (server text unique, access_token text, expires_at real, '
-                              'refresh_token text, scope text, token_type text, username text)')
-                    c.execute('CREATE TABLE if not exists sessions (name text unique, address text, worksheet_uuid text)')
+                    c.execute(
+                        'CREATE TABLE if not exists auth (server text unique, access_token text, expires_at real, '
+                        'refresh_token text, scope text, token_type text, username text)'
+                    )
+                    c.execute(
+                        'CREATE TABLE if not exists sessions (name text unique, address text, worksheet_uuid text)'
+                    )
                     c.execute('CREATE TABLE if not exists misc (key text unique, value text)')
             else:
                 self.state = {'auth': {}, 'sessions': {}}
@@ -168,9 +172,13 @@ class CodaLabManager(object):
             self.connection.row_factory = sqlite3.Row
             with self.connection:
                 c = self.connection.cursor()
-                c.execute('CREATE TABLE if not exists auth (server text unique, access_token text, expires_at real, '
-                          'refresh_token text, scope text, token_type text, username text)')
-                c.execute('CREATE TABLE if not exists sessions (name text unique, address text, worksheet_uuid text)')
+                c.execute(
+                    'CREATE TABLE if not exists auth (server text unique, access_token text, expires_at real, '
+                    'refresh_token text, scope text, token_type text, username text)'
+                )
+                c.execute(
+                    'CREATE TABLE if not exists sessions (name text unique, address text, worksheet_uuid text)'
+                )
                 c.execute('CREATE TABLE if not exists misc (key text unique, value text)')
         else:
             # Read state file, creating if it doesn't exist.
@@ -348,14 +356,16 @@ class CodaLabManager(object):
         # Get sessions from the state database
         with self.connection:
             c = self.connection.cursor()
-            c.execute("SELECT * FROM sessions WHERE name=?", (name, ))
+            c.execute("SELECT * FROM sessions WHERE name=?", (name,))
             retrieved_session = c.fetchone()
 
         if retrieved_session:
             # Session already exists, return it
-            return {"name": name,
-                    "address": retrieved_session["address"],
-                    "worksheet_uuid": retrieved_session["worksheet_uuid"]}
+            return {
+                "name": name,
+                "address": retrieved_session["address"],
+                "worksheet_uuid": retrieved_session["worksheet_uuid"],
+            }
 
         # New session: set the address and worksheet uuid to the default (main if not specified)
         cli_config = self.config.get('cli', {})
@@ -365,7 +375,6 @@ class CodaLabManager(object):
             c = self.connection.cursor()
             c.execute("replace into sessions values (?, ?, ?)", (name, address, worksheet_uuid))
         return {"name": name, "address": address, "worksheet_uuid": worksheet_uuid}
-
 
     @cached
     def default_user_info(self):
@@ -555,7 +564,7 @@ class CodaLabManager(object):
         # Get sessions from the state database
         with self.connection:
             c = self.connection.cursor()
-            c.execute("SELECT * FROM auth WHERE server=?", (cache_key, ))
+            c.execute("SELECT * FROM auth WHERE server=?", (cache_key,))
             retrieved_auth = c.fetchone()
         auth = dict(retrieved_auth) if retrieved_auth else {}
 
@@ -568,7 +577,7 @@ class CodaLabManager(object):
                 "expires_at": expires_at,
                 "refresh_token": refresh_token,
                 "scope": scope,
-                "token_type": token_type
+                "token_type": token_type,
             }
 
         def _cache_token(token_info, username, server):
@@ -580,21 +589,27 @@ class CodaLabManager(object):
             token_info['expires_at'] = time.time() + float(token_info['expires_in'])
             with self.connection:
                 c = self.connection.cursor()
-                c.execute("replace into auth values (?, ?, ?, ?, ?, ?, ?)",
-                          (server,
-                           token_info["access_token"],
-                           token_info["expires_at"],
-                           token_info["refresh_token"],
-                           token_info["scope"],
-                           token_info["token_type"],
-                           username))
+                c.execute(
+                    "replace into auth values (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        server,
+                        token_info["access_token"],
+                        token_info["expires_at"],
+                        token_info["refresh_token"],
+                        token_info["scope"],
+                        token_info["token_type"],
+                        username,
+                    ),
+                )
             return token_info['access_token']
 
-        token_info = _generate_token_info(auth.get("access_token"),
-                                          auth.get("expires_at"),
-                                          auth.get("refresh_token"),
-                                          auth.get("scope"),
-                                          auth.get("token_type"))
+        token_info = _generate_token_info(
+            auth.get("access_token"),
+            auth.get("expires_at"),
+            auth.get("refresh_token"),
+            auth.get("scope"),
+            auth.get("token_type"),
+        )
         # Check the cache for a valid token
         if token_info:
             expires_at = token_info.get('expires_at', 0.0)
@@ -655,10 +670,10 @@ class CodaLabManager(object):
         if self.config.get("state_backend") == "sqlite3":
             with self.connection:
                 c = self.connection.cursor()
-                c.execute("replace into sessions values (?, ?, ?)",
-                          (session["name"],
-                           session["address"],
-                           session["worksheet_uuid"]))
+                c.execute(
+                    "replace into sessions values (?, ?, ?)",
+                    (session["name"], session["address"], session["worksheet_uuid"]),
+                )
         else:
             self.save_state()
 
@@ -691,7 +706,7 @@ class CodaLabManager(object):
         epoch_str = formatting.datetime_str(datetime.datetime.utcfromtimestamp(0))
         with self.connection:
             c = self.connection.cursor()
-            c.execute("SELECT value FROM misc WHERE key=?", ("last_check_version_datetime", ))
+            c.execute("SELECT value FROM misc WHERE key=?", ("last_check_version_datetime",))
             last_check_version_datetime = c.fetchone()
         if last_check_version_datetime:
             last_check_str = last_check_version_datetime["value"]
@@ -704,8 +719,10 @@ class CodaLabManager(object):
         # Update the last_check_version_datetime
         with self.connection:
             c = self.connection.cursor()
-            c.execute("replace into misc (key, value) values (?, ?)",
-                      ("last_check_version_datetime", formatting.datetime_str(now),))
+            c.execute(
+                "replace into misc (key, value) values (?, ?)",
+                ("last_check_version_datetime", formatting.datetime_str(now)),
+            )
 
         # Print notice if server version is newer
         if list(map(int, server_version.split('.'))) > list(map(int, CODALAB_VERSION.split('.'))):
@@ -729,8 +746,7 @@ class CodaLabManager(object):
     def _logout_sqlite3(self, address):
         with self.connection:
             c = self.connection.cursor()
-            c.execute("delete from auth where server=?",
-                      (address,))
+            c.execute("delete from auth where server=?", (address,))
 
     def save_config(self):
         if self.temporary:

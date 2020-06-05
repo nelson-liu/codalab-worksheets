@@ -946,7 +946,7 @@ class BundleCLI(object):
             if self.manager.config.get("state_backend") == "sqlite3":
                 with self.manager.connection:
                     c = self.manager.connection.cursor()
-                    c.execute("SELECT * FROM auth WHERE server=?", (address, ))
+                    c.execute("SELECT * FROM auth WHERE server=?", (address,))
                     retrieved_auth_state = c.fetchone()
                 state = dict(retrieved_auth_state) if retrieved_auth_state else {}
             else:
