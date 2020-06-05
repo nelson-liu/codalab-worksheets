@@ -508,7 +508,7 @@ class CodaLabManager(object):
         :return: access token
         """
         if self.config.get("state_backend") == "sqlite3":
-            return self._authenticate_sqlite3()
+            return self._authenticate_sqlite3(cache_key, auth_handler)
         auth = self.state['auth'].get(cache_key, {})
 
         def _cache_token(token_info, username=None):
