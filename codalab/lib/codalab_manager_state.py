@@ -79,10 +79,10 @@ class CodalabManagerJsonState(CodalabManagerState):
         self.state["auth"].pop(server)
 
     def get_session(self, name, default={}):
-        return self.state["session"].get(name, default)
+        return self.state["sessions"].get(name, default)
 
     def set_session(self, name, address, worksheet_uuid):
-        self.state["session"]["name"] = {"address": address, "worksheet_uuid": "worksheet_uuid"}
+        self.state["sessions"]["name"] = {"address": address, "worksheet_uuid": "worksheet_uuid"}
         self._save_json_state()
 
     def get_last_check_version_datetime(self, default=None):
@@ -142,7 +142,7 @@ class CodalabManagerSqlite3State(CodalabManagerState):
     def delete_auth(self, server):
         with self.connection:
             c = self.connection.cursor()
-            c.execute("delete from auth where server=?", (server))
+            c.execute("delete from auth where server=?", (server,))
 
     def get_session(self, name, default={}):
         with self.connection:
