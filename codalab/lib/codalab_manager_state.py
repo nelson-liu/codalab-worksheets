@@ -1,3 +1,4 @@
+from copy import deepcopy
 import os
 import sqlite3
 
@@ -58,7 +59,7 @@ class CodalabManagerJsonState(CodalabManagerState):
         return os.getenv('CODALAB_STATE', os.path.join(get_codalab_home(), 'state.json'))
 
     def get_auth(self, server, default={}):
-        return self.state["auth"].get(server, default)
+        return deepcopy(self.state["auth"].get(server, default))
 
     def set_auth(
         self, server, access_token, expires_at, refresh_token, scope, token_type, username
@@ -79,14 +80,14 @@ class CodalabManagerJsonState(CodalabManagerState):
         self.state["auth"].pop(server)
 
     def get_session(self, name, default={}):
-        return self.state["sessions"].get(name, default)
+        return deepcopy(self.state["sessions"].get(name, default))
 
     def set_session(self, name, address, worksheet_uuid):
         self.state["sessions"]["name"] = {"address": address, "worksheet_uuid": worksheet_uuid}
         self._save_json_state()
 
     def get_last_check_version_datetime(self, default=None):
-        return self.state.get("last_check_version_datetime", default)
+        return deepcopy(self.state.get("last_check_version_datetime", default))
 
     def set_last_check_version_datetime(self, timestamp):
         self.state["last_check_version_datetime"] = timestamp
