@@ -539,7 +539,8 @@ class CodaLabManager(object):
 
     def logout(self, address):
         """Clear credentials associated with given address."""
-        return self.state.delete_auth(address)
+        if self.state.get_auth(address):
+            return self.state.delete_auth(address)
 
     def save_config(self):
         if self.temporary:
