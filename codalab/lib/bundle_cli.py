@@ -944,8 +944,8 @@ class BundleCLI(object):
             print("server_version: %s" % worksheet_info['meta']['version'], file=self.stdout)
             print("address: %s" % address, file=self.stdout)
             if self.manager.state_backend == "sqlite3":
-                with self.manager.connection:
-                    c = self.manager.connection.cursor()
+                with self.manager.state.connection:
+                    c = self.manager.state.connection.cursor()
                     c.execute("SELECT * FROM auth WHERE server=?", (address,))
                     retrieved_auth_state = c.fetchone()
                 state = dict(retrieved_auth_state) if retrieved_auth_state else {}

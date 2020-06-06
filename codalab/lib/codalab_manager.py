@@ -26,31 +26,22 @@ file that specifies enough information to construct some of these classes is
 still valid. For example, the config file for a remote client will not need to
 include any server configuration.
 """
-import datetime
-import getpass
-import json
 import os
-import psutil
-import re
 import sys
-import sqlite3
-import tempfile
 import textwrap
-import time
 from distutils.util import strtobool
-from urllib.parse import urlparse
 
 from codalab.client.json_api_client import JsonApiClient
-from codalab.common import CODALAB_VERSION, PermissionError, UsageError
+from codalab.common import UsageError
 from codalab.lib.bundle_store import MultiDiskBundleStore
+from codalab.lib.common import get_codalab_home, read_json_or_die, write_pretty_json
 from codalab.lib.crypt_util import get_random_string
 from codalab.lib.download_manager import DownloadManager
 from codalab.lib.emailer import SMTPEmailer, ConsoleEmailer
-from codalab.lib.print_util import pretty_print_json
 from codalab.lib.upload_manager import UploadManager
 from codalab.lib import formatting
 from codalab.model.worker_model import WorkerModel
-
+from .codalab_manager_state import CodalabManagerState
 
 MAIN_BUNDLE_SERVICE = 'https://worksheets.codalab.org'
 
@@ -62,22 +53,6 @@ def cached(fn):
         return self.cache[fn.__name__]
 
     return inner
-
-
-def write_pretty_json(data, path):
-    with open(path, 'w') as f:
-        pretty_print_json(data, f)
-
-
-def read_json_or_die(path):
-    with open(path, 'r') as f:
-        string = f.read()
-    try:
-        return json.loads(string)
-    except ValueError as e:
-        print("Invalid JSON in %s:\n%s" % (path, string))
-        print(e)
-        sys.exit(1)
 
 
 def prompt_bool(prompt, default=None):
@@ -127,25 +102,12 @@ class CodaLabManager(object):
     def __init__(self, temporary=False, config=None, clients=None):
         self.cache = {}
         self.temporary = temporary
-
         if self.temporary:
             self.config = config if config else {}
-            if self.state_backend == "sqlite3":
-                self.connection = sqlite3.connect(":memory:")
-                self.connection.row_factory = sqlite3.Row
-                with self.connection:
-                    c = self.connection.cursor()
-                    c.execute(
-                        'CREATE TABLE if not exists auth (server text unique, access_token text, expires_at real, '
-                        'refresh_token text, scope text, token_type text, username text)'
-                    )
-                    c.execute(
-                        'CREATE TABLE if not exists sessions (name text unique, address text, worksheet_uuid text)'
-                    )
-                    c.execute('CREATE TABLE if not exists misc (key text unique, value text)')
-            else:
-                self.state = {'auth': {}, 'sessions': {}}
             self.clients = clients
+            self.state = CodalabManagerState(
+                temporary=self.temporary, state_backend=self.state_backend
+            )
             return
 
         # Read config file, creating if it doesn't exist.
@@ -165,33 +127,7 @@ class CodaLabManager(object):
             return x
 
         self.config = replace(self.config)
-
-        if self.state_backend == "sqlite3":
-            # Read state database, creating if it doesn't exist.
-            self.connection = sqlite3.connect(self.state_path)
-            self.connection.row_factory = sqlite3.Row
-            with self.connection:
-                c = self.connection.cursor()
-                c.execute(
-                    'CREATE TABLE if not exists auth (server text unique, access_token text, expires_at real, '
-                    'refresh_token text, scope text, token_type text, username text)'
-                )
-                c.execute(
-                    'CREATE TABLE if not exists sessions (name text unique, address text, worksheet_uuid text)'
-                )
-                c.execute('CREATE TABLE if not exists misc (key text unique, value text)')
-        else:
-            # Read state file, creating if it doesn't exist.
-            if not os.path.exists(self.state_path):
-                write_pretty_json(
-                    {
-                        'auth': {},  # address -> {username, auth_token}
-                        'sessions': {},  # session_name -> {address, worksheet_uuid, last_modified}
-                    },
-                    self.state_path,
-                )
-            self.state = read_json_or_die(self.state_path)
-
+        self.state = CodalabManagerState(temporary=self.temporary, state_backend=self.state_backend)
         self.clients = {}  # map from address => client
 
     def init_config(self, dry_run=False):
@@ -251,21 +187,12 @@ class CodaLabManager(object):
     @property
     @cached
     def state_path(self):
-        if self.state_backend == "sqlite3":
-            return os.getenv('CODALAB_STATE', os.path.join(self.codalab_home, 'state.db'))
-        return os.getenv('CODALAB_STATE', os.path.join(self.codalab_home, 'state.json'))
+        return self.state.state_path
 
     @property
     @cached
     def codalab_home(self):
-        from codalab.lib import path_util
-
-        # Default to this directory in the user's home directory.
-        # In the future, allow customization based on.
-        home = os.getenv('CODALAB_HOME', '~/.codalab')
-        home = path_util.normalize(home)
-        path_util.make_directory(home)
-        return home
+        return get_codalab_home()
 
     @property
     @cached
@@ -298,83 +225,14 @@ class CodaLabManager(object):
         """
         Return the current session name.
         """
-        if self.temporary:
-            return 'temporary'
-
-        # If specified in the environment, then return that.
-        session = os.getenv('CODALAB_SESSION')
-        if session:
-            return session
-
-        # Otherwise, go up process hierarchy to the *highest up shell* out of
-        # the consecutive shells.  Include Python and Ruby so we can script from inside them.
-        #   cl bash python bash screen bash gnome-terminal init
-        #                  ^
-        #                  | return this
-        # This way, it's easy to write scripts that have embedded 'cl' commands
-        # which modify the current session.
-        process = psutil.Process().parent()
-        session = 'top'
-        max_depth = 10
-        while process and max_depth:
-            try:
-                name = os.path.basename(process.cmdline()[0])
-                # When a shell is invoked as a login shell, its process command
-                # will be preceded by a dash '-'.
-                if (
-                    re.match(r'-?(sh|bash|csh|tcsh|zsh|python|ruby|powershell|cmd)(\.exe)?', name)
-                    is None
-                ):
-                    break
-                session = str(process.pid)
-                process = process.parent()
-                max_depth -= 1
-            except psutil.AccessDenied:
-                # If we hit a root process, just stop searching upwards
-                break
-        return session
+        return self.state.session_name()
 
     @cached
     def session(self):
         """
         Return the current session.
         """
-        if self.state_backend == "sqlite3":
-            return self._session_sqlite3()
-        sessions = self.state['sessions']
-        name = self.session_name()
-        if name not in sessions:
-            # New session: set the address and worksheet uuid to the default (main if not specified)
-            cli_config = self.config.get('cli', {})
-            address = cli_config.get('default_address', MAIN_BUNDLE_SERVICE)
-            worksheet_uuid = cli_config.get('default_worksheet_uuid', '')
-            sessions[name] = {'address': address, 'worksheet_uuid': worksheet_uuid}
-        return sessions[name]
-
-    def _session_sqlite3(self):
-        name = self.session_name()
-        # Get sessions from the state database
-        with self.connection:
-            c = self.connection.cursor()
-            c.execute("SELECT * FROM sessions WHERE name=?", (name,))
-            retrieved_session = c.fetchone()
-
-        if retrieved_session:
-            # Session already exists, return it
-            return {
-                "name": name,
-                "address": retrieved_session["address"],
-                "worksheet_uuid": retrieved_session["worksheet_uuid"],
-            }
-
-        # New session: set the address and worksheet uuid to the default (main if not specified)
-        cli_config = self.config.get('cli', {})
-        address = cli_config.get('default_address', MAIN_BUNDLE_SERVICE)
-        worksheet_uuid = cli_config.get('default_worksheet_uuid', '')
-        with self.connection:
-            c = self.connection.cursor()
-            c.execute("replace into sessions values (?, ?, ?)", (name, address, worksheet_uuid))
-        return {"name": name, "address": address, "worksheet_uuid": worksheet_uuid}
+        return self.state.session()
 
     @cached
     def default_user_info(self):
@@ -511,140 +369,7 @@ class CodaLabManager(object):
         :param auth_handler: AuthHandler through which to authenticate
         :return: access token
         """
-        if self.state_backend == "sqlite3":
-            return self._authenticate_sqlite3(cache_key, auth_handler)
-        auth = self.state['auth'].get(cache_key, {})
-
-        def _cache_token(token_info, username=None):
-            '''
-            Helper to update state with new token info and optional username.
-            Returns the latest access token.
-            '''
-            # Make sure this is in sync with auth.py.
-            token_info['expires_at'] = time.time() + float(token_info['expires_in'])
-            del token_info['expires_in']
-            auth['token_info'] = token_info
-            if username is not None:
-                auth['username'] = username
-            self.save_state()
-            return token_info['access_token']
-
-        # Check the cache for a valid token
-        if 'token_info' in auth:
-            token_info = auth['token_info']
-            expires_at = token_info.get('expires_at', 0.0)
-
-            # If token is not nearing expiration, just return it.
-            if expires_at >= (time.time() + 10 * 60):
-                return token_info['access_token']
-
-            # Otherwise, let's refresh the token.
-            token_info = auth_handler.generate_token(
-                'refresh_token', auth['username'], token_info['refresh_token']
-            )
-            if token_info is not None:
-                return _cache_token(token_info)
-
-        # If we get here, a valid token is not already available.
-        auth = self.state['auth'][cache_key] = {}
-
-        username = os.environ.get('CODALAB_USERNAME')
-        password = os.environ.get('CODALAB_PASSWORD')
-        if username is None or password is None:
-            print('Requesting access at %s' % cache_key)
-        if username is None:
-            sys.stdout.write('Username: ')  # Use write to avoid extra space
-            sys.stdout.flush()
-            username = sys.stdin.readline().rstrip()
-        if password is None:
-            password = getpass.getpass()
-
-        token_info = auth_handler.generate_token('credentials', username, password)
-        if token_info is None:
-            raise PermissionError("Invalid username or password.")
-        return _cache_token(token_info, username)
-
-    def _authenticate_sqlite3(self, cache_key, auth_handler):
-        # Get sessions from the state database
-        with self.connection:
-            c = self.connection.cursor()
-            c.execute("SELECT * FROM auth WHERE server=?", (cache_key,))
-            retrieved_auth = c.fetchone()
-        auth = dict(retrieved_auth) if retrieved_auth else {}
-
-        def _generate_token_info(access_token, expires_at, refresh_token, scope, token_type):
-            if not all([access_token, expires_at, refresh_token, scope, token_type]):
-                # Return {} if any piece of the token info is missing.
-                return {}
-            return {
-                "access_token": access_token,
-                "expires_at": expires_at,
-                "refresh_token": refresh_token,
-                "scope": scope,
-                "token_type": token_type,
-            }
-
-        def _cache_token(token_info, username, server):
-            '''
-            Helper to update state with new token info and optional username.
-            Returns the latest access token.
-            '''
-            # Make sure this is in sync with auth.py.
-            token_info['expires_at'] = time.time() + float(token_info['expires_in'])
-            with self.connection:
-                c = self.connection.cursor()
-                c.execute(
-                    "replace into auth values (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        server,
-                        token_info["access_token"],
-                        token_info["expires_at"],
-                        token_info["refresh_token"],
-                        token_info["scope"],
-                        token_info["token_type"],
-                        username,
-                    ),
-                )
-            return token_info['access_token']
-
-        token_info = _generate_token_info(
-            auth.get("access_token"),
-            auth.get("expires_at"),
-            auth.get("refresh_token"),
-            auth.get("scope"),
-            auth.get("token_type"),
-        )
-        # Check the cache for a valid token
-        if token_info:
-            expires_at = token_info.get('expires_at', 0.0)
-
-            # If token is not nearing expiration, just return it.
-            if expires_at >= (time.time() + 10 * 60):
-                return token_info['access_token']
-
-            # Otherwise, let's refresh the token.
-            token_info = auth_handler.generate_token(
-                'refresh_token', auth['username'], token_info['refresh_token']
-            )
-            if token_info is not None:
-                return _cache_token(token_info, auth['username'], cache_key)
-
-        # If we get here, a valid token is not already available.
-        username = os.environ.get('CODALAB_USERNAME')
-        password = os.environ.get('CODALAB_PASSWORD')
-        if username is None or password is None:
-            print('Requesting access at %s' % cache_key)
-        if username is None:
-            sys.stdout.write('Username: ')  # Use write to avoid extra space
-            sys.stdout.flush()
-            username = sys.stdin.readline().rstrip()
-        if password is None:
-            password = getpass.getpass()
-
-        token_info = auth_handler.generate_token('credentials', username, password)
-        if token_info is None:
-            raise PermissionError("Invalid username or password.")
-        return _cache_token(token_info, username, cache_key)
+        return self.state._authenticate(cache_key, auth_handler)
 
     def get_current_worksheet_uuid(self):
         """
@@ -664,107 +389,16 @@ class CodaLabManager(object):
         """
         Set the current worksheet to the given worksheet_uuid.
         """
-        session = self.session()
-        session['address'] = address
-        if worksheet_uuid:
-            session['worksheet_uuid'] = worksheet_uuid
-        else:
-            if 'worksheet_uuid' in session:
-                del session['worksheet_uuid']
-        if self.state_backend == "sqlite3":
-            with self.connection:
-                c = self.connection.cursor()
-                c.execute(
-                    "replace into sessions values (?, ?, ?)",
-                    (session["name"], session["address"], session["worksheet_uuid"]),
-                )
-        else:
-            self.save_state()
+        return self.state.set_current_worksheet_uuid(address, worksheet_uuid)
 
     def check_version(self, server_version):
-        if self.state_backend == "sqlite3":
-            return self._check_version_sqlite3(server_version)
-        # Enforce checking version at most once every 24 hours
-        epoch_str = formatting.datetime_str(datetime.datetime.utcfromtimestamp(0))
-        last_check_str = self.state.get('last_check_version_datetime', epoch_str)
-        last_check_dt = formatting.parse_datetime(last_check_str)
-        now = datetime.datetime.utcnow()
-        if (now - last_check_dt) < datetime.timedelta(days=1):
-            return
-        self.state['last_check_version_datetime'] = formatting.datetime_str(now)
-        self.save_state()
-
-        # Print notice if server version is newer
-        if list(map(int, server_version.split('.'))) > list(map(int, CODALAB_VERSION.split('.'))):
-            message = (
-                "NOTICE: "
-                "The instance you are connected to is running CodaLab v{}. "
-                "You are currently using an older v{} of the CLI. "
-                "Please update codalab using\n"
-                "   pip install -U codalab\n"
-            ).format(server_version, CODALAB_VERSION)
-            sys.stderr.write(message)
-
-    def _check_version_sqlite3(self, server_version):
-        # Enforce checking version at most once every 24 hours
-        epoch_str = formatting.datetime_str(datetime.datetime.utcfromtimestamp(0))
-        with self.connection:
-            c = self.connection.cursor()
-            c.execute("SELECT value FROM misc WHERE key=?", ("last_check_version_datetime",))
-            last_check_version_datetime = c.fetchone()
-        if last_check_version_datetime:
-            last_check_str = last_check_version_datetime["value"]
-        else:
-            last_check_str = epoch_str
-        last_check_dt = formatting.parse_datetime(last_check_str)
-        now = datetime.datetime.utcnow()
-        if (now - last_check_dt) < datetime.timedelta(days=1):
-            return
-        # Update the last_check_version_datetime
-        with self.connection:
-            c = self.connection.cursor()
-            c.execute(
-                "replace into misc (key, value) values (?, ?)",
-                ("last_check_version_datetime", formatting.datetime_str(now)),
-            )
-
-        # Print notice if server version is newer
-        if list(map(int, server_version.split('.'))) > list(map(int, CODALAB_VERSION.split('.'))):
-            message = (
-                "NOTICE: "
-                "The instance you are connected to is running CodaLab v{}. "
-                "You are currently using an older v{} of the CLI. "
-                "Please update codalab using\n"
-                "   pip install -U codalab\n"
-            ).format(server_version, CODALAB_VERSION)
-            sys.stderr.write(message)
+        return self.state.check_version(server_version)
 
     def logout(self, address):
         """Clear credentials associated with given address."""
-        if self.state_backend == "sqlite3":
-            return self._logout_sqlite3(address)
-        if address in self.state['auth']:
-            del self.state['auth'][address]
-            self.save_state()
-
-    def _logout_sqlite3(self, address):
-        with self.connection:
-            c = self.connection.cursor()
-            c.execute("delete from auth where server=?", (address,))
+        return self.state.logout(address)
 
     def save_config(self):
         if self.temporary:
             return
         write_pretty_json(self.config, self.config_path)
-
-    def save_state(self):
-        if self.temporary:
-            return
-        write_pretty_json(self.state, self.state_path)
-
-    def __del__(self):
-        """
-        Clean up the CodalabManager by closing the SQLite connection, if applicable.
-        """
-        if self.state_backend == "sqlite3" and getattr(self, "connection", None):
-            self.connection.close()
