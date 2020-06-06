@@ -409,7 +409,7 @@ class CodaLabManager(object):
 
     @property
     def state_backend(self):
-        return self.config.get('state_backend')
+        return self.config.get('state_backend', 'json')
 
     def _authenticate(self, cache_key, auth_handler):
         """
