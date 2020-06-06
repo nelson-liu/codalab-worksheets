@@ -26,13 +26,18 @@ file that specifies enough information to construct some of these classes is
 still valid. For example, the config file for a remote client will not need to
 include any server configuration.
 """
+import datetime
+import getpass
 import os
 import sys
+import re
+import time
 import textwrap
 from distutils.util import strtobool
+import psutil
 
 from codalab.client.json_api_client import JsonApiClient
-from codalab.common import UsageError
+from codalab.common import CODALAB_VERSION, UsageError
 from codalab.lib.bundle_store import MultiDiskBundleStore
 from codalab.lib.common import get_codalab_home, read_json_or_die, write_pretty_json
 from codalab.lib.crypt_util import get_random_string
@@ -41,7 +46,7 @@ from codalab.lib.emailer import SMTPEmailer, ConsoleEmailer
 from codalab.lib.upload_manager import UploadManager
 from codalab.lib import formatting
 from codalab.model.worker_model import WorkerModel
-from .codalab_manager_state import CodalabManagerState
+from .codalab_manager_state import codalab_manager_state_types
 
 MAIN_BUNDLE_SERVICE = 'https://worksheets.codalab.org'
 
@@ -105,9 +110,7 @@ class CodaLabManager(object):
         if self.temporary:
             self.config = config if config else {}
             self.clients = clients
-            self.state = CodalabManagerState(
-                temporary=self.temporary, state_backend=self.state_backend
-            )
+            self.state = codalab_manager_state_types[self.state_backend](temporary=self.temporary)
             return
 
         # Read config file, creating if it doesn't exist.
@@ -127,7 +130,7 @@ class CodaLabManager(object):
             return x
 
         self.config = replace(self.config)
-        self.state = CodalabManagerState(temporary=self.temporary, state_backend=self.state_backend)
+        self.state = codalab_manager_state_types[self.state_backend](temporary=self.temporary)
         self.clients = {}  # map from address => client
 
     def init_config(self, dry_run=False):
@@ -225,14 +228,64 @@ class CodaLabManager(object):
         """
         Return the current session name.
         """
-        return self.state.session_name()
+        if self.temporary:
+            return 'temporary'
+
+        # If specified in the environment, then return that.
+        session = os.getenv('CODALAB_SESSION')
+        if session:
+            return session
+
+        # Otherwise, go up process hierarchy to the *highest up shell* out of
+        # the consecutive shells.  Include Python and Ruby so we can script from inside them.
+        #   cl bash python bash screen bash gnome-terminal init
+        #                  ^
+        #                  | return this
+        # This way, it's easy to write scripts that have embedded 'cl' commands
+        # which modify the current session.
+        process = psutil.Process().parent()
+        session = 'top'
+        max_depth = 10
+        while process and max_depth:
+            try:
+                name = os.path.basename(process.cmdline()[0])
+                # When a shell is invoked as a login shell, its process command
+                # will be preceded by a dash '-'.
+                if (
+                    re.match(r'-?(sh|bash|csh|tcsh|zsh|python|ruby|powershell|cmd)(\.exe)?', name)
+                    is None
+                ):
+                    break
+                session = str(process.pid)
+                process = process.parent()
+                max_depth -= 1
+            except psutil.AccessDenied:
+                # If we hit a root process, just stop searching upwards
+                break
+        return session
 
     @cached
     def session(self):
         """
         Return the current session.
         """
-        return self.state.session()
+        name = self.session_name()
+        # Get sessions from the state database
+        retrieved_session = self.state.get_session(name)
+        if retrieved_session:
+            # Session already exists, return it
+            return {
+                "name": name,
+                "address": retrieved_session["address"],
+                "worksheet_uuid": retrieved_session["worksheet_uuid"],
+            }
+
+        # New session: set the address and worksheet uuid to the default (main if not specified)
+        cli_config = self.config.get('cli', {})
+        address = cli_config.get('default_address', MAIN_BUNDLE_SERVICE)
+        worksheet_uuid = cli_config.get('default_worksheet_uuid', '')
+        self.state.set_session(name, address, worksheet_uuid)
+        return {"name": name, "address": address, "worksheet_uuid": worksheet_uuid}
 
     @cached
     def default_user_info(self):
@@ -369,7 +422,78 @@ class CodaLabManager(object):
         :param auth_handler: AuthHandler through which to authenticate
         :return: access token
         """
-        return self.state._authenticate(cache_key, auth_handler)
+        # Get sessions from the state database
+        auth = self.state.get_auth(cache_key)
+
+        def _generate_token_info(access_token, expires_at, refresh_token, scope, token_type):
+            if not all([access_token, expires_at, refresh_token, scope, token_type]):
+                # Return {} if any piece of the token info is missing.
+                return {}
+            return {
+                "access_token": access_token,
+                "expires_at": expires_at,
+                "refresh_token": refresh_token,
+                "scope": scope,
+                "token_type": token_type,
+            }
+
+        token_info = _generate_token_info(
+            auth.get("access_token"),
+            auth.get("expires_at"),
+            auth.get("refresh_token"),
+            auth.get("scope"),
+            auth.get("token_type"),
+        )
+
+        def _cache_token(token_info, username, server):
+            '''
+            Helper to update state with new token info and optional username.
+            Returns the latest access token.
+            '''
+            # Make sure this is in sync with auth.py.
+            token_info['expires_at'] = time.time() + float(token_info['expires_in'])
+            self.state.set_auth(
+                server,
+                token_info["access_token"],
+                token_info["expires_at"],
+                token_info["refresh_token"],
+                token_info["scope"],
+                token_info["token_type"],
+                username,
+            )
+            return token_info['access_token']
+
+        # Check the cache for a valid token
+        if token_info:
+            expires_at = token_info.get('expires_at', 0.0)
+
+            # If token is not nearing expiration, just return it.
+            if expires_at >= (time.time() + 10 * 60):
+                return token_info['access_token']
+
+            # Otherwise, let's refresh the token.
+            token_info = auth_handler.generate_token(
+                'refresh_token', auth['username'], token_info['refresh_token']
+            )
+            if token_info is not None:
+                return _cache_token(token_info, auth['username'], cache_key)
+
+        # If we get here, a valid token is not already available.
+        username = os.environ.get('CODALAB_USERNAME')
+        password = os.environ.get('CODALAB_PASSWORD')
+        if username is None or password is None:
+            print('Requesting access at %s' % cache_key)
+        if username is None:
+            sys.stdout.write('Username: ')  # Use write to avoid extra space
+            sys.stdout.flush()
+            username = sys.stdin.readline().rstrip()
+        if password is None:
+            password = getpass.getpass()
+
+        token_info = auth_handler.generate_token('credentials', username, password)
+        if token_info is None:
+            raise PermissionError("Invalid username or password.")
+        return _cache_token(token_info, username, cache_key)
 
     def get_current_worksheet_uuid(self):
         """
@@ -389,14 +513,33 @@ class CodaLabManager(object):
         """
         Set the current worksheet to the given worksheet_uuid.
         """
-        return self.state.set_current_worksheet_uuid(address, worksheet_uuid)
+        session = self.session()
+        self.state.set_session(session["name"], address, worksheet_uuid)
 
     def check_version(self, server_version):
-        return self.state.check_version(server_version)
+        # Enforce checking version at most once every 24 hours
+        epoch_str = formatting.datetime_str(datetime.datetime.utcfromtimestamp(0))
+        last_check_str = self.state.get_last_check_version_datetime(default=epoch_str)
+        last_check_dt = formatting.parse_datetime(last_check_str)
+        now = datetime.datetime.utcnow()
+        if (now - last_check_dt) < datetime.timedelta(days=1):
+            return
+        self.state.set_last_check_version_datetime(formatting.datetime_str(now))
+
+        # Print notice if server version is newer
+        if list(map(int, server_version.split('.'))) > list(map(int, CODALAB_VERSION.split('.'))):
+            message = (
+                "NOTICE: "
+                "The instance you are connected to is running CodaLab v{}. "
+                "You are currently using an older v{} of the CLI. "
+                "Please update codalab using\n"
+                "   pip install -U codalab\n"
+            ).format(server_version, CODALAB_VERSION)
+            sys.stderr.write(message)
 
     def logout(self, address):
         """Clear credentials associated with given address."""
-        return self.state.logout(address)
+        return self.state.delete_auth(address)
 
     def save_config(self):
         if self.temporary:
