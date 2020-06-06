@@ -943,9 +943,9 @@ class BundleCLI(object):
             print("client_version: %s" % CODALAB_VERSION, file=self.stdout)
             print("server_version: %s" % worksheet_info['meta']['version'], file=self.stdout)
             print("address: %s" % address, file=self.stdout)
-            auth_state = self.manager.state.get_auth(address)
-            if 'username' in auth_state:
-                print("username: %s" % auth_state['username'], file=self.stdout)
+            state = self.manager.state.get_auth(address, default={})
+            if 'username' in state:
+                print("username: %s" % state['username'], file=self.stdout)
 
         print("current_worksheet: %s" % self.simple_worksheet_str(worksheet_info), file=self.stdout)
         print("user: %s" % self.simple_user_str(client.fetch('user')), file=self.stdout)
