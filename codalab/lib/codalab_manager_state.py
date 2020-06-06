@@ -47,7 +47,7 @@ class CodalabManagerJsonState(CodalabManagerState):
             write_pretty_json(
                 {
                     'auth': {},  # address -> {username, auth_token}
-                    'sessions': {},  # session_name -> {address, worksheet_uuid, last_modified}
+                    'sessions': {},  # session_name -> {address, worksheet_uuid}
                 },
                 self.state_path,
             )
@@ -82,7 +82,7 @@ class CodalabManagerJsonState(CodalabManagerState):
         return self.state["sessions"].get(name, default)
 
     def set_session(self, name, address, worksheet_uuid):
-        self.state["sessions"]["name"] = {"address": address, "worksheet_uuid": "worksheet_uuid"}
+        self.state["sessions"]["name"] = {"address": address, "worksheet_uuid": worksheet_uuid}
         self._save_json_state()
 
     def get_last_check_version_datetime(self, default=None):
