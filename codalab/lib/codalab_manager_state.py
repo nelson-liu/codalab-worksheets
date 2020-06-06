@@ -78,6 +78,7 @@ class CodalabManagerJsonState(CodalabManagerState):
 
     def delete_auth(self, server):
         self.state["auth"].pop(server)
+        self._save_json_state()
 
     def get_session(self, name, default={}):
         return deepcopy(self.state["sessions"].get(name, default))
