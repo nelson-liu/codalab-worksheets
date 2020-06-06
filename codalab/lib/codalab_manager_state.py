@@ -83,7 +83,7 @@ class CodalabManagerJsonState(CodalabManagerState):
         return deepcopy(self.state["sessions"].get(name, default))
 
     def set_session(self, name, address, worksheet_uuid):
-        self.state["sessions"]["name"] = {"address": address, "worksheet_uuid": worksheet_uuid}
+        self.state["sessions"][name] = {"address": address, "worksheet_uuid": worksheet_uuid}
         self._save_json_state()
 
     def get_last_check_version_datetime(self, default=None):
