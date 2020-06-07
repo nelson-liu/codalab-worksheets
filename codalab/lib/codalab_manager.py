@@ -108,7 +108,7 @@ class CodaLabManager(object):
         self.cache = {}
         self.temporary = temporary
         if self.temporary:
-            self.config = config if config else {}
+            self.config = config
             self.clients = clients
             self.state = codalab_manager_state_types[self.state_backend](temporary=self.temporary)
             return
@@ -264,7 +264,6 @@ class CodaLabManager(object):
                 break
         return session
 
-    @cached
     def session(self):
         """
         Return the current session.
