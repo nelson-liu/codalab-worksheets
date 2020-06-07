@@ -5,7 +5,7 @@ import sqlite3
 from codalab.lib.common import get_codalab_home, read_json_or_die, write_pretty_json
 
 
-class CodalabManagerState:
+class CodaLabManagerState:
     def __init__(self, temporary):
         self.temporary = temporary
         # Read the state, creating it if it doesn't exist.
@@ -38,7 +38,7 @@ class CodalabManagerState:
         raise NotImplementedError
 
 
-class CodalabManagerJsonState(CodalabManagerState):
+class CodaLabManagerJsonState(CodaLabManagerState):
     def initialize_state(self):
         if self.temporary:
             self.state = {'auth': {}, 'sessions': {}}
@@ -100,7 +100,7 @@ class CodalabManagerJsonState(CodalabManagerState):
         write_pretty_json(self.state, self.state_path)
 
 
-class CodalabManagerSqlite3State(CodalabManagerState):
+class CodaLabManagerSqlite3State(CodaLabManagerState):
     def initialize_state(self):
         if self.temporary:
             self.connection = sqlite3.connect(":memory:")
@@ -132,7 +132,7 @@ class CodalabManagerSqlite3State(CodalabManagerState):
         if not retrieved_auth:
             return default
         # Format the retrieved authentication details in the same nested
-        # format returned by the CodalabManagerJsonState
+        # format returned by the CodaLabManagerJsonState
         retrieved_auth = dict(retrieved_auth)
         return_auth = {}
         token_info_keys = ["access_token", "expires_at", "refresh_token", "scope", "token_type"]
@@ -189,13 +189,13 @@ class CodalabManagerSqlite3State(CodalabManagerState):
 
     def __del__(self):
         """
-        Clean up the CodalabManagerState by closing the SQLite connection, if applicable.
+        Clean up the CodaLabManagerState by closing the SQLite connection, if applicable.
         """
         if getattr(self, "connection", None):
             self.connection.close()
 
 
 codalab_manager_state_types = {
-    "json": CodalabManagerJsonState,
-    "sqlite3": CodalabManagerSqlite3State,
+    "json": CodaLabManagerJsonState,
+    "sqlite3": CodaLabManagerSqlite3State,
 }
