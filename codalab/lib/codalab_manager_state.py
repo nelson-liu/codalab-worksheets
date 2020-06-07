@@ -139,7 +139,7 @@ class CodalabManagerSqlite3State(CodalabManagerState):
         # Only add the keys that exist in retrieved_auth, and omit the ones
         # that were not returned. This is for backwards-compatibility with the
         # existing CodaLabManager#_authenticate function.
-        token_info = {retrieved_auth[key] for key in token_info_keys if key in retrieved_auth}
+        token_info = {key: retrieved_auth[key] for key in token_info_keys if key in retrieved_auth}
         return_auth["token_info"] = token_info
         if "username" in retrieved_auth:
             return_auth["username"] = retrieved_auth["username"]
