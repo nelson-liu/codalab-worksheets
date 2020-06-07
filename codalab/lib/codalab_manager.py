@@ -424,26 +424,6 @@ class CodaLabManager(object):
         # Get sessions from the state database
         auth = self.state.get_auth(cache_key)
 
-        def _generate_token_info(access_token, expires_at, refresh_token, scope, token_type):
-            if not all([access_token, expires_at, refresh_token, scope, token_type]):
-                # Return {} if any piece of the token info is missing.
-                return {}
-            return {
-                "access_token": access_token,
-                "expires_at": expires_at,
-                "refresh_token": refresh_token,
-                "scope": scope,
-                "token_type": token_type,
-            }
-
-        token_info = _generate_token_info(
-            auth.get("access_token"),
-            auth.get("expires_at"),
-            auth.get("refresh_token"),
-            auth.get("scope"),
-            auth.get("token_type"),
-        )
-
         def _cache_token(token_info, username, server):
             '''
             Helper to update state with new token info and optional username.
@@ -463,7 +443,8 @@ class CodaLabManager(object):
             return token_info['access_token']
 
         # Check the cache for a valid token
-        if token_info:
+        if 'token_info' in auth:
+            token_info = auth['token_info']
             expires_at = token_info.get('expires_at', 0.0)
 
             # If token is not nearing expiration, just return it.

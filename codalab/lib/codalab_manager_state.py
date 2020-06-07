@@ -129,7 +129,21 @@ class CodalabManagerSqlite3State(CodalabManagerState):
             c = self.connection.cursor()
             c.execute("SELECT * FROM auth WHERE server=?", (server,))
             retrieved_auth = c.fetchone()
-        return dict(retrieved_auth) if retrieved_auth else default
+        if not retrieved_auth:
+            return default
+        # Format the retrieved authentication details in the same nested
+        # format returned by the CodalabManagerJsonState
+        retrieved_auth = dict(retrieved_auth)
+        return_auth = {}
+        token_info_keys = ["access_token", "expires_at", "refresh_token", "scope", "token_type"]
+        # Only add the keys that exist in retrieved_auth, and omit the ones
+        # that were not returned. This is for backwards-compatibility with the
+        # existing CodaLabManager#_authenticate function.
+        token_info = {retrieved_auth[key] for key in token_info_keys if key in retrieved_auth}
+        return_auth["token_info"] = token_info
+        if "username" in retrieved_auth:
+            return_auth["username"] = retrieved_auth["username"]
+        return return_auth
 
     def set_auth(
         self, server, access_token, expires_at, refresh_token, scope, token_type, username
