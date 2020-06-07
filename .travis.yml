@@ -18,7 +18,36 @@ jobs:
       services:
         - docker
       env:
-        - CODALAB_USERNAME=codalab CODALAB_PASSWORD=codalab CI=true
+        - CODALAB_USERNAME=codalab CODALAB_PASSWORD=codalab CI=true CODALAB_STATE_BACKEND=json
+      python: 3.6
+      before_install:
+        - sudo rm /usr/local/bin/docker-compose
+        - curl -L https://github.com/docker/compose/releases/download/1.23.2/docker-compose-`uname -s`-`uname -m` > docker-compose
+        - chmod +x docker-compose
+        - sudo mv docker-compose /usr/local/bin
+        - sudo service mysql stop
+      install:
+        - python3 codalab_service.py build services --version ${TRAVIS_BRANCH} --pull $([ -z "${CODALAB_DOCKER_USERNAME}" ] || [ "$TRAVIS_PULL_REQUEST_BRANCH" != "" ] || echo "--push")
+        - python3 codalab_service.py start --services default monitor --version ${TRAVIS_BRANCH}
+        - pip install -r requirements.txt
+      before_script:
+        - ./scripts/test-setup.sh
+        - export PATH=$PATH:/usr/bin/geckodriver
+      script:
+        - python3 test_runner.py --version ${TRAVIS_BRANCH} default
+        # Make sure restarting worker doesn't cause any issues (ie in serialization/deserialization)
+        - docker restart codalab_worker_1 && python3 test_runner.py --version ${TRAVIS_BRANCH} run
+        - docker stop codalab_worker_1
+        - python3 codalab_service.py start --services init worker --version ${TRAVIS_BRANCH} --shared-file-system
+        # Run frontend tests + backend test modules that test shared file systems code paths
+        - python3 test_runner.py --version ${TRAVIS_BRANCH} frontend basic run read write kill resources netcat netcurl workers
+    - stage: check
+      language: python
+      sudo: required
+      services:
+        - docker
+      env:
+        - CODALAB_USERNAME=codalab CODALAB_PASSWORD=codalab CI=true CODALAB_STATE_BACKEND=sqlite3
       python: 3.6
       before_install:
         - sudo rm /usr/local/bin/docker-compose
