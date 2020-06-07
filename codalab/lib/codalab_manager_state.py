@@ -112,13 +112,13 @@ class CodaLabManagerSqlite3State(CodaLabManagerState):
         with self.connection:
             c = self.connection.cursor()
             c.execute(
-                'CREATE TABLE if not exists auth (server text unique, access_token text, expires_at real, '
-                'refresh_token text, scope text, token_type text, username text)'
+                'CREATE TABLE IF NOT EXISTS auth (server TEXT UNIQUE PRIMARY KEY, access_token TEXT, expires_at REAL, '
+                'refresh_token TEXT, scope TEXT, token_type TEXT, username TEXT)'
             )
             c.execute(
-                'CREATE TABLE if not exists sessions (name text unique, address text, worksheet_uuid text)'
+                'CREATE TABLE IF NOT EXISTS sessions (name TEXT UNIQUE PRIMARY KEY, address TEXT, worksheet_uuid TEXT)'
             )
-            c.execute('CREATE TABLE if not exists misc (key text unique, value text)')
+            c.execute('CREATE TABLE IF NOT EXISTS misc (key TEXT UNIQUE PRIMARY KEY, value TEXT)')
 
     @property
     def state_path(self):
@@ -127,7 +127,7 @@ class CodaLabManagerSqlite3State(CodaLabManagerState):
     def get_auth(self, server, default={}):
         with self.connection:
             c = self.connection.cursor()
-            c.execute("SELECT * FROM auth WHERE server=?", (server,))
+            c.execute("SELECT * FROM auth WHERE server = ?", (server,))
             retrieved_auth = c.fetchone()
         if not retrieved_auth:
             return default
@@ -151,31 +151,31 @@ class CodaLabManagerSqlite3State(CodaLabManagerState):
         with self.connection:
             c = self.connection.cursor()
             c.execute(
-                "replace into auth values (?, ?, ?, ?, ?, ?, ?)",
+                "REPLACE INTO auth VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (server, access_token, expires_at, refresh_token, scope, token_type, username),
             )
 
     def delete_auth(self, server):
         with self.connection:
             c = self.connection.cursor()
-            c.execute("delete from auth where server=?", (server,))
+            c.execute("DELETE FROM auth WHERE server = ?", (server,))
 
     def get_session(self, name, default={}):
         with self.connection:
             c = self.connection.cursor()
-            c.execute("SELECT * FROM sessions WHERE name=?", (name,))
+            c.execute("SELECT * FROM sessions WHERE name = ?", (name,))
             retrieved_session = c.fetchone()
         return dict(retrieved_session) if retrieved_session else default
 
     def set_session(self, name, address, worksheet_uuid):
         with self.connection:
             c = self.connection.cursor()
-            c.execute("replace into sessions values (?, ?, ?)", (name, address, worksheet_uuid))
+            c.execute("REPLACE INTO sessions VALUES (?, ?, ?)", (name, address, worksheet_uuid))
 
     def get_last_check_version_datetime(self, default=None):
         with self.connection:
             c = self.connection.cursor()
-            c.execute("SELECT value FROM misc WHERE key=?", ("last_check_version_datetime",))
+            c.execute("SELECT value FROM misc WHERE key = ?", ("last_check_version_datetime",))
             last_check_version_datetime = c.fetchone()
         return last_check_version_datetime["value"] if last_check_version_datetime else default
 
@@ -183,7 +183,7 @@ class CodaLabManagerSqlite3State(CodaLabManagerState):
         with self.connection:
             c = self.connection.cursor()
             c.execute(
-                "replace into misc (key, value) values (?, ?)",
+                "REPLACE INTO misc (key, value) VALUES (?, ?)",
                 ("last_check_version_datetime", timestamp),
             )
 
