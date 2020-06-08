@@ -19,6 +19,7 @@ class CodaLabManagerState:
        using this state file checked whether the current CodaLab version is
        older than the CodaLab version running on the instance.
     """
+
     def __init__(self, temporary):
         self.temporary = temporary
         # Read the state, creating it if it doesn't exist.
@@ -69,6 +70,7 @@ class CodaLabManagerJsonState(CodaLabManagerState):
     3. ``"last_check_version_datetime"`` (str) stores a timestamp of the last time that a
        CodaLabManager compared the installed version with the version on the CodaLab server.
     """
+
     def initialize_state(self):
         if self.temporary:
             self.state = {'auth': {}, 'sessions': {}}
@@ -159,6 +161,7 @@ class CodaLabManagerSqlite3State(CodaLabManagerState):
         value is the timestamp that a CodaLabManager last checked whether the
         locally installed version was out of date.
     """
+
     def initialize_state(self):
         if self.temporary:
             self.connection = sqlite3.connect(":memory:")
