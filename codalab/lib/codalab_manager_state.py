@@ -6,6 +6,19 @@ from codalab.lib.common import get_codalab_home, read_json_or_die, write_pretty_
 
 
 class CodaLabManagerState:
+    """
+    This is an abstract class representing the current state of a
+    CodaLabManager. Broadly, it stores three components in its state:
+
+    1. The authentication token(s) for any instances that the user has logged
+       into from the CLI.
+    2. Information about any sessions that the user has created. For now, this
+       is the session's current worksheet uuid and the current CodaLab
+       instance the session is connected to.
+    3. A timestamp representing the last known time that _any_ CodaLabManager
+       using this state file checked whether the current CodaLab version is
+       older than the CodaLab version running on the instance.
+    """
     def __init__(self, temporary):
         self.temporary = temporary
         # Read the state, creating it if it doesn't exist.
@@ -39,6 +52,23 @@ class CodaLabManagerState:
 
 
 class CodaLabManagerJsonState(CodaLabManagerState):
+    """
+    The CodaLabManagerJsonState stores the current state of a CodaLabManager as
+    a JSON file that is read and updated on disk. The state is structured as a
+    nested dictionary with three top-level keys:
+
+    1. ``"auth"`` (Dict[str, Union[Dict[str, str], str]]) maps server
+       addresses to authentication information. The authentication information
+       takes the form of (1) a string key ``"token_info"`` with fields that represent
+       the details of an authentication token and (2) a string key ``username``
+       that stores a string username.
+    2. ``"sessions"`` (Dict[Dict[str, str]]) maps session IDs to information about each
+       session. Specifically, it stores a string "address" that represents the session's current
+       CodaLab server address, and a string "worksheet_uuid" that represents the session's
+       current worksheet uuid.
+    3. ``"last_check_version_datetime"`` (str) stores a timestamp of the last time that a
+       CodaLabManager compared the installed version with the version on the CodaLab server.
+    """
     def initialize_state(self):
         if self.temporary:
             self.state = {'auth': {}, 'sessions': {}}
@@ -101,6 +131,34 @@ class CodaLabManagerJsonState(CodaLabManagerState):
 
 
 class CodaLabManagerSqlite3State(CodaLabManagerState):
+    """
+    The CodaLabManagerSqlite3State stores the current state of a CodaLabManager as
+    a local SQLite database that is read and updated on disk. The state is structured as
+    3 distinct tables.
+
+    1. ``"auth"`` maps server addresses to authentication information. The table contains the
+       following columns:
+           - server TEXT UNIQUE PRIMARY KEY
+           - access_token TEXT
+           - expires_at REAL
+           - refresh_token TEXT
+           - scope TEXT
+           - token_type TEXT
+           - username TEXT
+
+    2. ``"sessions"`` maps session IDs to information about each session. The table contains the
+       following columns:
+           - name TEXT UNIQUE PRIMARY KEY
+           - address TEXT
+           - worksheet_uuid TEXT
+
+    3. ``"misc"`` is a key-value store with the following columns:
+           - key TEXT UNIQUE PRIMARY KEY
+           - value TEXT
+        The only key currently stored is "last_check_version_datetime", whose
+        value is the timestamp that a CodaLabManager last checked whether the
+        locally installed version was out of date.
+    """
     def initialize_state(self):
         if self.temporary:
             self.connection = sqlite3.connect(":memory:")
