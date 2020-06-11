@@ -404,7 +404,7 @@ class CodaLabManager(object):
 
     @property
     def cli_verbose(self):
-        return self.config.get('cli', {}).get('verbose')
+        return self.config.get('cli', {}).get('verbose', 0)
 
     @property
     def state_backend(self):
