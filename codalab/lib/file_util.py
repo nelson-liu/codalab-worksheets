@@ -6,8 +6,9 @@ BUFFER_SIZE = 2 * 1024 * 1024
 
 import sys
 from . import formatting
-import urllib.request, urllib.error, urllib.parse
 import subprocess
+
+import requests
 
 
 def tracked(fileobj, progress_callback):
@@ -62,13 +63,11 @@ def download_url(source_url, target_path, print_status=False):
     """
     Download the file at |source_url| and write it to |target_path|.
     """
-    in_file = urllib.request.urlopen(source_url)
-    total_bytes = in_file.info().get('Content-Length')
+    total_bytes = requests.head(source_url).get('Content-Length')
     if total_bytes:
         total_bytes = int(total_bytes)
 
     num_bytes = 0
-    out_file = open(target_path, 'wb')
 
     def status_str():
         if total_bytes:
@@ -80,14 +79,14 @@ def download_url(source_url, target_path, print_status=False):
         else:
             return 'Downloaded %s' % (formatting.size_str(num_bytes))
 
-    while True:
-        s = in_file.read(BUFFER_SIZE)
-        if not s:
-            break
-        out_file.write(s)
-        num_bytes += len(s)
-        if print_status:
-            print('\r' + status_str(), end=' ', file=sys.stderr)
-            sys.stderr.flush()
+    with requests.get(source_url, stream=True, timeout=30) as r:
+        r.raise_for_status()
+        with open(target_path, 'wb') as out_file:
+            for chunk in r.iter_content(chunk_size=BUFFER_SIZE):
+                out_file.write(chunk)
+                num_bytes += len(chunk)
+                if print_status:
+                    print('\r' + status_str(), end=' ', file=sys.stderr)
+                    sys.stderr.flush()
     if print_status:
         print('\r' + status_str() + ' [done]', file=sys.stderr)

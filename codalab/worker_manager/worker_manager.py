@@ -12,6 +12,8 @@ from codalab.client.json_api_client import JsonApiException
 from codalab.lib.codalab_manager import CodaLabManager
 from codalab.worker.bundle_state import State
 
+import requests
+
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,7 @@ class WorkerManager(object):
             try:
                 self.run_one_iteration()
             except (
+                requests.exceptions.RequestException,
                 urllib.error.URLError,
                 http.client.HTTPException,
                 socket.error,

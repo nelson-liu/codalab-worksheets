@@ -5,11 +5,14 @@ import json
 import socket
 import threading
 import time
-import urllib.request, urllib.parse, urllib.error
+import urllib.parse
+import urllib.error
 
 from .rest_client import RestClient, RestClientException
 from .file_util import tar_gzip_directory
 from codalab.common import ensure_str
+
+import requests
 
 
 def wrap_exception(message):
@@ -21,13 +24,13 @@ def wrap_exception(message):
                 raise
             except RestClientException as e:
                 raise BundleServiceException(message + ': ' + str(e), e.client_error)
-            except urllib.error.HTTPError as e:
+            except requests.exceptions.HTTPError as e:
                 try:
-                    # Ensure the type of urllib.error.HTTPError response to be string
-                    client_error = ensure_str(e.read())
+                    # Ensure the type of requests.exceptions.HTTPError response to be string
+                    client_error = ensure_str(e.response.text)
                     if e.reason == 'invalid_grant':
                         raise BundleAuthException(
-                            message + ': ' + http.client.responses[e.code] + ' - ' + client_error,
+                            message + ': ' + http.client.responses[e.response.status_code] + ' - ' + client_error,
                             True,
                         )
                     else:
@@ -97,17 +100,14 @@ class BundleServiceClient(RestClient):
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-Requested-With': 'XMLHttpRequest',
         }
-        request = urllib.request.Request(
-            self._base_url + '/oauth2/token',
-            data=urllib.parse.urlencode(request_data).encode('utf-8'),
-            headers=headers,
-        )
-        with closing(urllib.request.urlopen(request)) as response:
-            response_data = response.read().decode()
+        response = requests.post(self._base_url + '/oauth2/token',
+                                 headers=headers,
+                                 data=request_data,
+                                 timeout=30)
         try:
-            token = json.loads(response_data)
+            token = response.json()
         except ValueError:
-            raise BundleServiceException('Invalid JSON: ' + response_data, False)
+            raise BundleServiceException('Invalid JSON: ' + response.text, False)
         if token['token_type'] != 'Bearer':
             raise BundleServiceException(
                 'Unknown authorization token type: ' + token['token_type'], True
