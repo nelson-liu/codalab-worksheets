@@ -728,7 +728,7 @@ class Worker:
     def upload_bundle_contents(self, bundle_uuid, bundle_path, exclude_patterns, update_status):
         with closing(tar_gzip_directory(bundle_path, exclude_patterns=exclude_patterns)) as fileobj:
             self.s3_client.upload_fileobj(
-                fileobj, self.s3_bucket, f"codalab/{bundle_uuid}", callback=update_status
+                fileobj, self.s3_bucket, f"codalab/{bundle_uuid}", Callback=update_status
             )
         with closing(
             tar_gzip_directory_stderr_stdout(bundle_path, exclude_patterns=exclude_patterns)
