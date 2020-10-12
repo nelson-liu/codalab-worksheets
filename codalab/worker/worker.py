@@ -22,6 +22,7 @@ from .bundle_service_client import BundleServiceException, BundleServiceClient
 from .dependency_manager import DependencyManager
 from .docker_image_manager import DockerImageManager
 from .download_util import BUNDLE_NO_LONGER_RUNNING_MESSAGE
+from .file_util import tar_gzip_directory
 from .state_committer import JsonStateCommitter
 from .bundle_state import BundleInfo, RunResources, BundleCheckinState
 from .worker_run_state import RunStateMachine, RunStage, RunState
