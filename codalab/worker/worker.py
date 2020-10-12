@@ -129,6 +129,8 @@ class Worker:
             assign_cpu_and_gpu_sets_fn=self.assign_cpu_and_gpu_sets,
             shared_file_system=self.shared_file_system,
         )
+        self.s3_client = boto3.client('s3')
+        self.s3_bucket = "nlpbatch"
 
     def init_docker_networks(self, docker_network_prefix, verbose=True):
         """
@@ -721,11 +723,12 @@ class Worker:
         threading.Thread(target=write_fn).start()
 
     def upload_bundle_contents(self, bundle_uuid, bundle_path, exclude_patterns, update_status):
-        self.execute_bundle_service_command_with_retry(
-            lambda: self.bundle_service.update_bundle_contents(
-                self.id, bundle_uuid, bundle_path, exclude_patterns, update_status
-            )
-        )
+        with closing(tar_gzip_directory(bundle_path, exclude_patterns=exclude_patterns)) as fileobj:
+            self.s3_client.upload_fileobj(
+                fileobj,
+                self.s3_bucket,
+                f"codalab/{bundle_uuid}",
+                callback=update_status)
 
     def read_run_missing(self, socket_id):
         message = {
