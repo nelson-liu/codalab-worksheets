@@ -89,7 +89,7 @@ class AWSBatchWorkerManager(WorkerManager):
         return [WorkerJob(job['status'] == 'RUNNING') for job in jobs]
 
     def start_worker_job(self):
-        image = 'nelson-liu/s3-cl-worker:latest'
+        image = 'nfliu/s3-cl-worker:latest'
         worker_id = uuid.uuid4().hex
         logger.debug('Starting worker %s with image %s', worker_id, image)
         work_dir_prefix = (
