@@ -73,6 +73,53 @@ def tar_gzip_directory(
         raise IOError(e.output)
 
 
+def tar_gzip_directory_stderr_stdout(
+    directory_path, follow_symlinks=False, exclude_patterns=[], exclude_names=[], ignore_file=None
+):
+    """
+    Returns a file-like object containing a tarred and gzipped archive of the
+    given directory.
+
+    follow_symlinks: Whether symbolic links should be followed.
+    exclude_names: Any top-level directory entries with names in exclude_names
+                   are not included.
+    exclude_patterns: Any directory entries with the given names at any depth in
+                      the directory structure are excluded.
+    ignore_file: Name of the file where exclusion patterns are read from.
+    """
+    args = ['tar', 'czf', '-', '-C', directory_path]
+
+    # If the BSD tar library is being used, append --disable-copy to prevent creating ._* files
+    if 'bsdtar' in get_tar_version_output():
+        args.append('--disable-copyfile')
+
+    if ignore_file:
+        # Ignore entries specified by the ignore file (e.g. .gitignore)
+        args.append('--exclude-ignore=' + ignore_file)
+    if follow_symlinks:
+        args.append('-h')
+    if not exclude_patterns:
+        exclude_patterns = []
+
+    exclude_patterns.extend(ALWAYS_IGNORE_PATTERNS)
+    for pattern in exclude_patterns:
+        args.append('--exclude=' + pattern)
+
+    if exclude_names:
+        for name in exclude_names:
+            # Exclude top-level entries provided by exclude_names
+            args.append('--exclude=./' + name)
+    # Add the strderr and the stdout
+    args.append('stderr')
+    args.append('stdout')
+
+    try:
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE)
+        return proc.stdout
+    except subprocess.CalledProcessError as e:
+        raise IOError(e.output)
+
+
 def un_tar_directory(fileobj, directory_path, compression='', force=False):
     """
     Extracts the given file-like object containing a tar archive into the given
