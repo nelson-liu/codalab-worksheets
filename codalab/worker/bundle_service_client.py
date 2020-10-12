@@ -163,6 +163,21 @@ class BundleServiceClient(RestClient):
                 progress_callback=progress_callback,
             )
 
+    @wrap_exception('Unable to update stderr stdout bundle contents in bundle service')
+    def update_bundle_contents_stderr_stdout(
+        self, worker_id, uuid, path, exclude_patterns, progress_callback
+    ):
+        with closing(
+            tar_gzip_directory_stderr_stdout(path, exclude_patterns=exclude_patterns)
+        ) as fileobj:
+            self._upload_with_chunked_encoding(
+                'PUT',
+                '/bundles/' + uuid + '/contents/blob/',
+                query_params={'filename': 'bundle.tar.gz', 'finalize_on_success': 0},
+                fileobj=fileobj,
+                progress_callback=progress_callback,
+            )
+
     @wrap_exception('Unable to get worker code')
     def get_code(self):
         return self._make_request(

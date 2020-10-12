@@ -24,7 +24,6 @@ from .dependency_manager import DependencyManager
 from .docker_image_manager import DockerImageManager
 from .download_util import BUNDLE_NO_LONGER_RUNNING_MESSAGE
 from .file_util import tar_gzip_directory, tar_gzip_directory_stderr_stdout
-from .rest_client import _upload_with_chunked_encoding
 from .state_committer import JsonStateCommitter
 from .bundle_state import BundleInfo, RunResources, BundleCheckinState
 from .worker_run_state import RunStateMachine, RunStage, RunState
@@ -731,16 +730,11 @@ class Worker:
             self.s3_client.upload_fileobj(
                 fileobj, self.s3_bucket, f"codalab/{bundle_uuid}", Callback=update_status
             )
-        with closing(
-            tar_gzip_directory_stderr_stdout(bundle_path, exclude_patterns=exclude_patterns)
-        ) as fileobj:
-            self._upload_with_chunked_encoding(
-                'PUT',
-                '/bundles/' + bundle_uuid + '/contents/blob/',
-                query_params={'filename': 'bundle.tar.gz', 'finalize_on_success': 0},
-                fileobj=fileobj,
-                progress_callback=update_status,
+        self.execute_bundle_service_command_with_retry(
+            lambda: self.bundle_service.update_bundle_contents_stderr_stdout(
+                self.id, bundle_uuid, bundle_path, exclude_patterns, update_status
             )
+        )
 
     def read_run_missing(self, socket_id):
         message = {
