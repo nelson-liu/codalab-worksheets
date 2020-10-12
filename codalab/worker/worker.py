@@ -12,6 +12,7 @@ from typing import Optional, Set, Dict
 
 import psutil
 
+import boto3
 import docker
 from codalab.lib.telemetry_util import capture_exception, using_sentry
 import codalab.worker.docker_utils as docker_utils
