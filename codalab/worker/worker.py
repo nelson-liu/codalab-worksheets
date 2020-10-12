@@ -1,3 +1,4 @@
+from contextlib import closing
 import logging
 import os
 import shutil
