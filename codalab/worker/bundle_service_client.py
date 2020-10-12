@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.error
 
 from .rest_client import RestClient, RestClientException
-from .file_util import tar_gzip_directory
+from .file_util import tar_gzip_directory, tar_gzip_directory_stderr_stdout
 from codalab.common import ensure_str, URLOPEN_TIMEOUT_SECONDS
 
 
