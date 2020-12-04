@@ -133,7 +133,7 @@ class Worker:
             shared_file_system=self.shared_file_system,
         )
         self.s3_client = boto3.client('s3')
-        self.s3_bucket = "nlpbatch"
+        self.s3_bucket = "stanfordnlp"
 
     def init_docker_networks(self, docker_network_prefix, verbose=True):
         """
