@@ -90,6 +90,7 @@ jobs:
           - copy netcat netcurl
           - edit
           - open wopen
+        state_backend: [json,sqlite3]
     steps:
       - name: Clear free space
         run: |
@@ -118,6 +119,7 @@ jobs:
           python3 test_runner.py --version ${VERSION} ${TEST}
         env:
           TEST: ${{ matrix.test }}
+          CODALAB_STATE_BACKEND: ${{ matrix.state_backend }}
           VERSION: ${{ github.head_ref || 'master' }}
           CODALAB_LINK_MOUNTS: /tmp
       - name: Save logs
@@ -188,6 +190,7 @@ jobs:
     strategy:
       matrix:
         test: [run,run2,link read write kill resources]
+        state_backend: [json,sqlite3]
     steps:
       - name: Clear free space
         run: |
@@ -216,6 +219,7 @@ jobs:
           python3 test_runner.py --version ${VERSION} ${TEST}
         env:
           TEST: ${{ matrix.test }}
+          CODALAB_STATE_BACKEND: ${{ matrix.state_backend }}
           VERSION: ${{ github.head_ref || 'master' }}
           CODALAB_LINK_MOUNTS: /tmp
       - name: Save logs
@@ -290,6 +294,7 @@ jobs:
     strategy:
       matrix:
         test: [frontend]
+        state_backend: [json,sqlite3]
     steps:
       - name: Clear free space
         run: |
@@ -323,6 +328,7 @@ jobs:
           python3 test_runner.py --version ${VERSION} ${TEST}
         env:
           TEST: ${{ matrix.test }}
+          CODALAB_STATE_BACKEND: ${{ matrix.state_backend }}
           VERSION: ${{ github.head_ref || 'master' }}
       - name: Upload screenshots on failure
         uses: actions/upload-artifact@v1

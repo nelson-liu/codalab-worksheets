@@ -32,8 +32,6 @@ class CodalabManagerTest(unittest.TestCase):
 
     def test_temp_codalab_manager(self):
         manager: CodaLabManager = CodaLabManager(temporary=True)
-        self.assertEqual(manager.state, {'auth': {}, 'sessions': {}})
-        manager.save_state()
         self.assertFalse(
             os.path.exists(manager.state_path),
             msg='Assert that the current state is not written out to state_path for a temporary CodaLabManager',
